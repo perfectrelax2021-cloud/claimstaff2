@@ -1361,7 +1361,7 @@ function updateNamaLockUI(){
   if(form.namaLocked && form.namaLengkap){
     searchWrap.classList.add("hidden");
     lockedWrap.classList.remove("hidden");
-    display.textContent = form.namaLengkap + " — NIK " + form.nik;
+    display.textContent = form.namaLengkap;
   } else {
     searchWrap.classList.remove("hidden");
     lockedWrap.classList.add("hidden");
@@ -1614,7 +1614,6 @@ function syncToSheet(record){
     notaBukti: record.notaBukti,
     notaNamaFile: record.notaNamaFile,
     namaLengkap: record.namaLengkap,
-    nik: record.nik,
     kategori: record.kategori,
     titikLokasi: record.titikLokasi,
     tanggalNota: record.tanggalNota,
@@ -1649,7 +1648,6 @@ function handleSubmit(ev){
       id,
       tanggalUpload: todayISO(),
       namaLengkap: form.namaLengkap.trim(),
-      nik: form.nik,
       kategori: form.kategori,
       titikLokasi: form.titikLokasi,
       kodeOutlet: form.kodeOutlet,
