@@ -154,8 +154,19 @@
   }
   .submit-btn:hover { box-shadow: 0 10px 24px rgba(30,86,160,0.42); }
   .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
-  .toast { margin-top: 12px; font-size: 12.5px; background: #EAF3DE; color: #27500A; padding: 8px 10px; border-radius: 8px; text-align: center; }
-  .toast.err { background: #FBEAEA; color: #A32D2D; }
+  .toast {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  z-index: 300; font-size: 14px; font-weight: 700;
+  background: #1E7A34; color: #FFFFFF; padding: 13px 22px; border-radius: 12px;
+  text-align: center; box-shadow: 0 14px 34px rgba(18,35,63,0.35);
+  display: flex; align-items: center; gap: 8px; max-width: 90vw;
+  animation: toastIn .25s ease;
+}
+.toast.err { background: #A32D2D; }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
 
   .ledger-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
   .filter-select { height: 32px; border: 1px solid #C9D6E8; border-radius: 8px; font-size: 12.5px; padding: 0 10px; background: #F8FBFF; }
@@ -1243,8 +1254,9 @@ function saveEntries(){
 
 function showToast(msg, isError){
   const box = document.getElementById("toastBox");
-  box.innerHTML = `<div class="toast ${isError?'err':''}">${esc(msg)}</div>`;
-  setTimeout(()=>{ box.innerHTML=""; }, 2500);
+  const icon = isError ? "⚠️" : "✅";
+  box.innerHTML = `<div class="toast ${isError?'err':''}">${icon} ${esc(msg)}</div>`;
+  setTimeout(()=>{ box.innerHTML=""; }, 3200);
 }
 
 function compressImage(file, maxDim, quality){
