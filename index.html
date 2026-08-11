@@ -1184,12 +1184,13 @@ const KATEGORI = [
   { label: "BBM", color: "#BA7517", bg: "#FAEEDA" },
   { label: "Transportasi Umum", color: "#185FA5", bg: "#E6F1FB" },
   { label: "Parkir", color: "#534AB7", bg: "#EEEDFE" },
-  { label: "ATK", color: "#3B6D11", bg: "#EAF3DE" },
   { label: "Perlengkapan Display", color: "#993556", bg: "#FBEAF0" },
+  { label: "ATK", color: "#3B6D11", bg: "#EAF3DE" },
   { label: "Biaya Ongkir", color: "#0F6E56", bg: "#E1F5EE" },
+  { label: "Kartu Modem", color: "#7A4FBF", bg: "#F1EBFB" },
 ];
-
-const ADMIN_PIN = "279900";
+ 
+const ADMIN_PIN = "12345";
 const STORAGE_KEY = "reimburse_entries_v1_area2";
 
 /* === AREA 2 — Google Sheet khusus Area 2 ===
@@ -1795,10 +1796,11 @@ function handleExport(){
   showToast("File Excel sedang diunduh");
 }
 
-const CATEGORY_EXPORT_ORDER = ["BBM", "Transportasi Umum", "Parkir", "Perlengkapan Display", "ATK", "Biaya Ongkir"];
+const CATEGORY_EXPORT_ORDER = ["BBM", "Transportasi Umum", "Parkir", "Perlengkapan Display", "ATK", "Biaya Ongkir", "Kartu Modem"];
 const CM_TO_PX = 37.7952755906;
-const IMG_HEIGHT_PX = Math.round(8 * CM_TO_PX);     // 8 cm
-const IMG_WIDTH_PX = Math.round(6.57 * CM_TO_PX);   // 6.57 cm
+const EXPORT_SCALE = 0.85;
+const IMG_HEIGHT_PX = Math.round(8 * CM_TO_PX * EXPORT_SCALE);     // 8 cm x 85%
+const IMG_WIDTH_PX = Math.round(6.57 * CM_TO_PX * EXPORT_SCALE);   // 6.57 cm x 85%
 const ROW_HEIGHT_PX = 20; // perkiraan tinggi baris default Excel (15pt)
 
 function sortEntriesForPhotoExport(list){
