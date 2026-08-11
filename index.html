@@ -1535,6 +1535,13 @@ function parseNominal(str){
   return Number(cleaned) || 0;
 }
 
+ function driveImageUrl(shareUrl){
+  if(!shareUrl) return "";
+  const m = String(shareUrl).match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if(!m) return "";
+  return "https://lh3.googleusercontent.com/d/" + m[1];
+}
+
 async function handleLoadFromSheet(){
   if(!SHEET_CSV_URL || !SHEET_CSV_URL.startsWith("http")){
     showToast("URL Google Sheets belum diatur, hubungi pembuat aplikasi", true);
@@ -1569,6 +1576,7 @@ async function handleLoadFromSheet(){
       .map((r, i) => {
         const timestampRaw = idx.timestamp >= 0 ? r[idx.timestamp] : "";
         const tanggalUpload = timestampRaw ? timestampRaw.split(" ")[0] : "";
+        const notaRaw = idx.nota >= 0 ? r[idx.nota] : "";
         return {
           id: "sheet-" + i + "-" + (timestampRaw || i),
           tanggalUpload: tanggalUpload,
@@ -1579,8 +1587,8 @@ async function handleLoadFromSheet(){
           kodeOutlet: idx.outlet >= 0 ? r[idx.outlet] : "",
           tanggalNota: idx.tanggalNota >= 0 ? r[idx.tanggalNota] : "",
           nominal: idx.nominal >= 0 ? parseNominal(r[idx.nominal]) : 0,
-          notaBukti: "",
-          notaNamaFile: idx.nota >= 0 ? r[idx.nota] : "",
+          notaBukti: driveImageUrl(notaRaw),
+          notaNamaFile: notaRaw && notaRaw !== "-" ? "Lihat nota" : "",
           keterangan: idx.keterangan >= 0 ? r[idx.keterangan] : "",
         };
       });
