@@ -1250,8 +1250,16 @@ function saveEntries(){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
     return true;
   }catch(e){
-    console.error("Gagal menyimpan data", e);
-    return false;
+    console.error("Penyimpanan lokal penuh, mencoba tanpa cache foto...", e);
+    try{
+      const stripped = entries.map(en => ({ ...en, notaBukti: "" }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped));
+      entries = stripped;
+      return true;
+    }catch(e2){
+      console.error("Tetap gagal menyimpan data", e2);
+      return false;
+    }
   }
 }
 
