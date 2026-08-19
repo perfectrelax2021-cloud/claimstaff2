@@ -1860,57 +1860,66 @@ async function handleExportPhoto(){
   btn.innerHTML = "Menyiapkan file...";
   btn.disabled = true;
 
+  const COLS_PER_ROW = 3;
+
   try{
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Lampiran Nota");
-    sheet.getColumn(1).width = 34;
-    sheet.getColumn(2).width = 26;
-    sheet.getColumn(3).width = 16;
-    sheet.getColumn(4).width = 16;
+    for(let c = 1; c <= COLS_PER_ROW; c++){
+      sheet.getColumn(c).width = 30;
+    }
 
-    let r = 1; // baris ExcelJS 1-based
+    let r = 1;
+    const imageRowSpan = Math.ceil(IMG_HEIGHT_PX / ROW_HEIGHT_PX);
 
     for(const kategori of CATEGORY_EXPORT_ORDER){
       const group = sortEntriesForPhotoExport(filtered.filter(e => e.kategori === kategori));
       if(group.length === 0) continue;
 
-      const meta = kategoriMeta(kategori);
       const headerRow = sheet.getRow(r);
       headerRow.getCell(1).value = kategori.toUpperCase() + " (" + group.length + " klaim)";
-      sheet.mergeCells(r, 1, r, 4);
+      sheet.mergeCells(r, 1, r, COLS_PER_ROW);
       headerRow.getCell(1).font = { bold: true, size: 13, color: { argb: "FFFFFFFF" } };
       headerRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E56A0" } };
+      headerRow.getCell(1).alignment = { vertical: "middle" };
       headerRow.height = 22;
       r += 1;
 
-      for(const e of group){
-        const infoRow = sheet.getRow(r);
-        infoRow.getCell(1).value = "Nama: " + e.namaLengkap;
-        infoRow.getCell(2).value = (e.kodeOutlet ? e.kodeOutlet + " - " : "") + e.titikLokasi;
-        infoRow.getCell(3).value = "Nota: " + formatTanggal(e.tanggalNota);
-        infoRow.getCell(4).value = formatRupiah(e.nominal);
-        infoRow.font = { size: 10.5 };
-        infoRow.height = 18;
-        r += 1;
+      for(let i = 0; i < group.length; i += COLS_PER_ROW){
+        const chunk = group.slice(i, i + COLS_PER_ROW);
+        const imageStartRow = r;
 
-        if(e.notaBukti){
+        for(let c = 0; c < chunk.length; c++){
+          const e = chunk[c];
+          if(!e.notaBukti) continue;
           try{
-            const base64 = e.notaBukti.split(",")[1];
-            const ext = e.notaBukti.includes("image/png") ? "png" : "jpeg";
-            const imageId = workbook.addImage({ base64, extension: ext });
-            sheet.addImage(imageId, {
-              tl: { col: 0, row: r - 1 },
-              ext: { width: IMG_WIDTH_PX, height: IMG_HEIGHT_PX },
-            });
+            const img = await toEmbeddableImage(e.notaBukti);
+            if(img){
+              const imageId = workbook.addImage({ base64: img.base64, extension: img.ext });
+              sheet.addImage(imageId, {
+                tl: { col: c, row: imageStartRow - 1 },
+                ext: { width: IMG_WIDTH_PX, height: IMG_HEIGHT_PX },
+              });
+            }
           }catch(imgErr){
             console.error("Gagal menyisipkan gambar untuk", e.namaLengkap, imgErr);
           }
-          const imageRows = Math.ceil(IMG_HEIGHT_PX / ROW_HEIGHT_PX);
-          r += imageRows;
         }
-        r += 1; // baris spasi antar klaim
+        r += imageRowSpan;
+
+        const captionRow = sheet.getRow(r);
+        captionRow.height = 34;
+        for(let c = 0; c < chunk.length; c++){
+          const e = chunk[c];
+          const lokasi = (e.kodeOutlet ? e.kodeOutlet + " - " : "") + e.titikLokasi;
+          const cell = captionRow.getCell(c + 1);
+          cell.value = e.namaLengkap + "\n" + lokasi + "\n" + formatTanggal(e.tanggalNota) + "   " + formatRupiah(e.nominal);
+          cell.font = { size: 9.5 };
+          cell.alignment = { wrapText: true, vertical: "top", horizontal: "left" };
+        }
+        r += 2;
       }
-      r += 1; // baris spasi antar kategori
+      r += 1;
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -1934,7 +1943,6 @@ async function handleExportPhoto(){
     btn.disabled = false;
   }
 }
-
 /* ===== wire up events ===== */
 function initEvents(){
   const namaInput = document.getElementById("f_namaQuery");
