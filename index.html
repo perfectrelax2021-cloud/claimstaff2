@@ -1861,33 +1861,70 @@ async function handleExportPhoto(){
   btn.disabled = true;
 
   const COLS_PER_ROW = 3;
+  const VOUCHER_IMG_WIDTH_PX = 281;   // ~7.43 cm
+  const VOUCHER_IMG_HEIGHT_PX = 302;  // ~8 cm
+  const IMAGE_TO_CAPTION_GAP = 16;    // baris kosong antara foto dan caption
+  const GROUP_SPACING = 2;            // baris kosong setelah caption sebelum grup foto berikutnya
+
+  function shortTanggal(raw){
+    const s = String(raw || "").trim();
+    let d;
+    if(/^\d{4}-\d{2}-\d{2}/.test(s)) d = new Date(s);
+    else if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)){
+      const [dd,mm,yyyy] = s.split("/").map(Number);
+      d = new Date(yyyy, mm-1, dd);
+    } else d = new Date(s);
+    if(isNaN(d.getTime())) return s;
+    const bulan = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+    return d.getDate() + "-" + bulan[d.getMonth()];
+  }
+
+  function sheetNameFor(nama, used){
+    let base = String(nama || "Tanpa Nama").replace(/[\\/*?:[\]]/g, "").trim().slice(0, 31) || "Staff";
+    let name = base, i = 2;
+    while(used.has(name)){
+      const suffix = " (" + i + ")";
+      name = base.slice(0, 31 - suffix.length) + suffix;
+      i++;
+    }
+    used.add(name);
+    return name;
+  }
 
   try{
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Lampiran Nota");
-    for(let c = 1; c <= COLS_PER_ROW; c++){
-      sheet.getColumn(c).width = 30;
+    const usedNames = new Set();
+
+    const byStaff = new Map();
+    for(const e of filtered){
+      const key = e.namaLengkap || "Tanpa Nama";
+      if(!byStaff.has(key)) byStaff.set(key, []);
+      byStaff.get(key).push(e);
     }
 
-    let r = 1;
-    const imageRowSpan = Math.ceil(IMG_HEIGHT_PX / ROW_HEIGHT_PX);
+    const knownCategories = new Set(CATEGORY_EXPORT_ORDER);
 
-    for(const kategori of CATEGORY_EXPORT_ORDER){
-      const group = sortEntriesForPhotoExport(filtered.filter(e => e.kategori === kategori));
-      if(group.length === 0) continue;
+    for(const [nama, list] of byStaff){
+      const sheet = workbook.addWorksheet(sheetNameFor(nama, usedNames));
+      sheet.getColumn(1).width = 13;
 
-      const headerRow = sheet.getRow(r);
-      headerRow.getCell(1).value = kategori.toUpperCase() + " (" + group.length + " klaim)";
-      sheet.mergeCells(r, 1, r, COLS_PER_ROW);
-      headerRow.getCell(1).font = { bold: true, size: 13, color: { argb: "FFFFFFFF" } };
-      headerRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E56A0" } };
-      headerRow.getCell(1).alignment = { vertical: "middle" };
-      headerRow.height = 22;
-      r += 1;
+      const total = list.reduce((sum, e) => sum + (Number(e.nominal) || 0), 0);
+      sheet.getCell("A1").value = "Nama";
+      sheet.getCell("B1").value = ": " + nama;
+      sheet.getCell("G1").value = "Total Klaim";
+      sheet.getCell("H1").value = "Rp " + total.toLocaleString("id-ID");
+      sheet.getCell("A2").value = "Area";
+      sheet.getCell("B2").value = ": ";
 
-      for(let i = 0; i < group.length; i += COLS_PER_ROW){
-        const chunk = group.slice(i, i + COLS_PER_ROW);
-        const imageStartRow = r;
+      const sorted = [];
+      for(const kategori of CATEGORY_EXPORT_ORDER){
+        sorted.push(...sortEntriesForPhotoExport(list.filter(e => e.kategori === kategori)));
+      }
+      sorted.push(...list.filter(e => !knownCategories.has(e.kategori)));
+
+      let r = 4; // baris pertama grup foto (Excel 1-based)
+      for(let i = 0; i < sorted.length; i += COLS_PER_ROW){
+        const chunk = sorted.slice(i, i + COLS_PER_ROW);
 
         for(let c = 0; c < chunk.length; c++){
           const e = chunk[c];
@@ -1897,29 +1934,26 @@ async function handleExportPhoto(){
             if(img){
               const imageId = workbook.addImage({ base64: img.base64, extension: img.ext });
               sheet.addImage(imageId, {
-                tl: { col: c, row: imageStartRow - 1 },
-                ext: { width: IMG_WIDTH_PX, height: IMG_HEIGHT_PX },
+                tl: { col: c * 3, row: r - 1 },
+                ext: { width: VOUCHER_IMG_WIDTH_PX, height: VOUCHER_IMG_HEIGHT_PX },
               });
             }
           }catch(imgErr){
             console.error("Gagal menyisipkan gambar untuk", e.namaLengkap, imgErr);
           }
         }
-        r += imageRowSpan;
 
-        const captionRow = sheet.getRow(r);
-        captionRow.height = 34;
+        const captionRowIdx = r + IMAGE_TO_CAPTION_GAP;
+        const captionRow = sheet.getRow(captionRowIdx);
         for(let c = 0; c < chunk.length; c++){
           const e = chunk[c];
           const lokasi = (e.kodeOutlet ? e.kodeOutlet + " - " : "") + e.titikLokasi;
-          const cell = captionRow.getCell(c + 1);
-          cell.value = e.namaLengkap + "\n" + lokasi + "\n" + formatTanggal(e.tanggalNota) + "   " + formatRupiah(e.nominal);
-          cell.font = { size: 9.5 };
-          cell.alignment = { wrapText: true, vertical: "top", horizontal: "left" };
+          captionRow.getCell(c * 3 + 1).value = lokasi;
+          captionRow.getCell(c * 3 + 2).value = shortTanggal(e.tanggalNota);
+          captionRow.getCell(c * 3 + 3).value = Number(e.nominal) || 0;
         }
-        r += 2;
+        r = captionRowIdx + GROUP_SPACING;
       }
-      r += 1;
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -1929,12 +1963,12 @@ async function handleExportPhoto(){
     const stamp = todayISO();
     const suffix = (filterKategori ? "-" + filterKategori.replace(/\s+/g,"") : "") + (filterNama.trim() ? "-" + filterNama.trim().replace(/\s+/g,"") : "");
     a.href = url;
-    a.download = `reimbursement-foto-nota-${stamp}${suffix}.xlsx`;
+    a.download = `reimbursement-voucher-per-staff-${stamp}${suffix}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast("File Excel dengan foto sedang diunduh");
+    showToast("File Excel per staff sedang diunduh");
   }catch(err){
     console.error(err);
     showToast("Gagal membuat file, coba lagi", true);
