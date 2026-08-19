@@ -1160,8 +1160,9 @@ const STAFF = [
           <option value="nama">Urutkan: Nama (A-Z)</option>
         </select>
         <button type="button" class="export-btn" id="exportBtn">&#128190; Export Excel</button>
-        <button type="button" class="export-btn" id="syncSheetBtn">&#128260; Muat data dari Google Sheets</button>
-        <button type="button" class="export-btn" id="exportPhotoBtn">&#128248; Export Foto Nota</button>
+       <button type="button" class="export-btn" id="syncSheetBtn">&#128260; Muat data dari Google Sheets</button>
+       <button type="button" class="export-btn" id="exportPhotoBtn">&#128248; Export Foto Nota (Excel)</button>
+       <button type="button" class="export-btn" id="exportSheetPhotoBtn">&#128193; Susun Foto di Google Sheets</button>>
       </div>
     </div>
     <div class="stub" id="stubRow"></div>
@@ -1823,7 +1824,32 @@ function sortEntriesForPhotoExport(list){
     return (a.titikLokasi || "").localeCompare(b.titikLokasi || "");
   });
 }
-
+async function handleExportSheetPhoto(){
+  const btn = document.getElementById("exportSheetPhotoBtn");
+  const originalText = btn.innerHTML;
+  if(!WEBAPP_URL || !WEBAPP_URL.startsWith("http")){
+    showToast("URL Google Sheets belum diatur", true);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Menyusun foto...";
+  try{
+    const res = await fetch(WEBAPP_URL + "?action=exportPhotos");
+    const data = await res.json();
+    if(data.status === "ok"){
+      showToast("Berhasil menyusun " + data.count + " foto di Google Sheets");
+      if(data.sheetUrl) window.open(data.sheetUrl, "_blank");
+    } else {
+      showToast("Gagal: " + (data.message || "terjadi kesalahan"), true);
+    }
+  }catch(err){
+    console.error("Gagal memanggil export foto ke sheet:", err);
+    showToast("Gagal menghubungi Google Sheets", true);
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
+}
 async function handleExportPhoto(){
   const filtered = getFiltered();
   if(filtered.length === 0){ showToast("Tidak ada data untuk diekspor", true); return; }
@@ -1963,6 +1989,8 @@ function initEvents(){
   });
   document.getElementById("exportBtn").addEventListener("click", handleExport);
   document.getElementById("exportPhotoBtn").addEventListener("click", handleExportPhoto);
+  document.getElementById("exportPhotoBtn").addEventListener("click", handleExportPhoto);
+  document.getElementById("exportSheetPhotoBtn").addEventListener("click", handleExportSheetPhoto);
   document.getElementById("syncSheetBtn").addEventListener("click", handleLoadFromSheet);
 
   document.getElementById("pinSubmitBtn").addEventListener("click", tryPinLogin);
