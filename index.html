@@ -213,7 +213,7 @@
 </style>
 </head>
 <script>
-const OUTLETS = [
+ const OUTLETS = [
   { kode: "A001", lokasi: "Ancol Dufan Ice Age" },
   { kode: "A002", lokasi: "Dago Dreampark" },
   { kode: "A005", lokasi: "Taman Aerosport Pekanbaru" },
@@ -885,6 +885,7 @@ const OUTLETS = [
   { kode: "P084", lokasi: "Palapa Toserba - Krian" },
   { kode: "G049", lokasi: "Point Coffee Gedhe Rest Area 207A" },
 ];
+
 const STAFF = [
   { nama: "Abdul Deva Muhammad", nik: "PR341" },
   { nama: "Abdul Hanif Afifudin", nik: "PR227" },
@@ -1051,6 +1052,7 @@ const STAFF = [
   { nama: "Anik Wijayanti", nik: "T98" },
   { nama: "Fahry Dutha Kurniawan", nik: "PR480" },
 ];
+ 
 </script>
 <body>
 
@@ -1184,6 +1186,26 @@ const STAFF = [
     <div class="stub" id="stubRow"></div>
     <div id="tableArea"></div>
   </div>
+
+  <div id="statusView" class="ledger-card hidden">
+    <div class="ledger-header-row">
+      <h2 class="form-title">Status Upload Nota</h2>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="text" class="filter-select" id="statusFilterNama" placeholder="Cari nama..." style="width:150px;" />
+        <select class="filter-select" id="statusFilterKategori">
+          <option value="">Semua kategori</option>
+        </select>
+        <select class="filter-select" id="statusSortBy">
+          <option value="terbaru">Urutkan: Terbaru</option>
+          <option value="nama">Urutkan: Nama (A-Z)</option>
+        </select>
+        <button type="button" class="export-btn" id="statusReloadBtn">&#128260; Muat Ulang</button>
+        <button type="button" class="btn-outline" id="statusBackBtn">&#8592; Kembali</button>
+      </div>
+    </div>
+    <div class="stub" id="statusStubRow"></div>
+    <div id="statusTableArea"></div>
+  </div>
 </div>
 
 <div id="pinOverlay" class="overlay hidden">
@@ -1212,7 +1234,7 @@ const KATEGORI = [
   { label: "Biaya Kartu Modem", color: "#7A4FBF", bg: "#F1EBFB" },
 ];
 
-const ADMIN_PIN = "12345";
+const ADMIN_PIN = "279900";
 const STORAGE_KEY = "reimburse_entries_v1_area2";
 
 /* === AREA 2 — Google Sheet khusus Area 2 ===
@@ -1234,6 +1256,9 @@ let sortBy = "terbaru";
 let filterTglMulai = "";
 let filterTglSampai = "";
 let filterTglJenis = "tanggalUpload";
+let statusFilterKategori = "";
+let statusFilterNama = "";
+let statusSortBy = "terbaru";
 
 /* ===== helpers ===== */
 function todayISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
@@ -1348,15 +1373,22 @@ function compressImage(file, maxDim, quality){
 function initSelects(){
   const kSel = document.getElementById("f_kategori");
   const fSel = document.getElementById("filterKategori");
+  const sSel = document.getElementById("statusFilterKategori");
   KATEGORI.forEach(k=>{
     const o1 = document.createElement("option"); o1.value = k.label; o1.textContent = k.label; kSel.appendChild(o1);
     const o2 = document.createElement("option"); o2.value = k.label; o2.textContent = k.label; fSel.appendChild(o2);
+    const o3 = document.createElement("option"); o3.value = k.label; o3.textContent = k.label; sSel.appendChild(o3);
   });
 }
 
 function renderHeaderRight(){
   const el = document.getElementById("headerRight");
-  document.getElementById("pageTitle").textContent = view === "admin" ? "Dashboard admin reimbursement — Area 2" : "Klaim reimbursement staff — Area 2";
+  const titles = {
+    admin: "Dashboard admin reimbursement — Area 2",
+    status: "Status Upload Nota — Area 2",
+    staff: "Klaim reimbursement staff — Area 2",
+  };
+  document.getElementById("pageTitle").textContent = titles[view] || titles.staff;
   if(view === "admin"){
     el.innerHTML = `
       <div style="display:flex; gap:8px; align-items:center;">
@@ -1367,8 +1399,19 @@ function renderHeaderRight(){
         <button type="button" class="btn-outline danger" id="exitAdminBtn">&#8592; Keluar admin</button>
       </div>`;
     document.getElementById("exitAdminBtn").onclick = () => { view = "staff"; render(); };
+  } else if(view === "status"){
+    el.innerHTML = `<button type="button" class="btn-outline" id="statusExitBtn">&#8592; Kembali ke form</button>`;
+    document.getElementById("statusExitBtn").onclick = () => { view = "staff"; render(); };
   } else {
-    el.innerHTML = `<button type="button" class="btn-outline" id="adminLinkBtn">&#128274; Masuk admin</button>`;
+    el.innerHTML = `
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button type="button" class="btn-outline" id="statusLinkBtn">&#128203; Status upload nota</button>
+        <button type="button" class="btn-outline" id="adminLinkBtn">&#128274; Masuk admin</button>
+      </div>`;
+    document.getElementById("statusLinkBtn").onclick = () => {
+      view = "status"; render();
+      handleLoadFromSheet("statusReloadBtn");
+    };
     document.getElementById("adminLinkBtn").onclick = () => {
       document.getElementById("pinOverlay").classList.remove("hidden");
       document.getElementById("pinInput").value = "";
@@ -1428,8 +1471,10 @@ function updateNamaLockUI(){
 function render(){
   document.getElementById("staffView").classList.toggle("hidden", view !== "staff");
   document.getElementById("adminView").classList.toggle("hidden", view !== "admin");
+  document.getElementById("statusView").classList.toggle("hidden", view !== "status");
   renderHeaderRight();
   if(view === "admin") renderLedger();
+  if(view === "status") renderStatusLedger();
 }
 
 /* ===== outlet autocomplete ===== */
@@ -1655,12 +1700,13 @@ function driveImageUrl(shareUrl){
   return "https://lh3.googleusercontent.com/d/" + m[1];
 }
 
-async function handleLoadFromSheet(){
+async function handleLoadFromSheet(btnId){
+  btnId = btnId || "syncSheetBtn";
   if(!SHEET_CSV_URL || !SHEET_CSV_URL.startsWith("http")){
     showToast("URL Google Sheets belum diatur, hubungi pembuat aplikasi", true);
     return;
   }
-  const btn = document.getElementById("syncSheetBtn");
+  const btn = document.getElementById(btnId);
   const originalText = btn.innerHTML;
   btn.innerHTML = "Memuat...";
   btn.disabled = true;
@@ -1707,7 +1753,7 @@ async function handleLoadFromSheet(){
       });
 
     entries = loaded;
-    renderLedger();
+    if(view === "status") renderStatusLedger(); else renderLedger();
     renderHeaderRight();
     showToast("Berhasil memuat " + loaded.length + " klaim dari Google Sheets (semua staff)");
   }catch(err){
@@ -1893,6 +1939,70 @@ function renderLedger(){
       saveEntries();
       renderLedger();
       renderHeaderRight();
+    });
+  });
+}
+
+function getStatusFiltered(){
+  let list = statusFilterKategori ? entries.filter(e => e.kategori === statusFilterKategori) : entries;
+  if(statusFilterNama.trim()){
+    const q = statusFilterNama.trim().toLowerCase();
+    list = list.filter(e => (e.namaLengkap || "").toLowerCase().includes(q));
+  }
+  list = [...list];
+  if(statusSortBy === "nama"){
+    list.sort((a, b) => (a.namaLengkap || "").localeCompare(b.namaLengkap || ""));
+  } else {
+    list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }
+  return list;
+}
+
+function renderStatusLedger(){
+  const filtered = getStatusFiltered();
+
+  const stub = document.getElementById("statusStubRow");
+  stub.innerHTML = Array.from({length:40}).map(()=>'<span class="stub-dot"></span>').join("");
+
+  const area = document.getElementById("statusTableArea");
+  if(filtered.length === 0){
+    area.innerHTML = `<p class="empty-state">Belum ada klaim tercatat. Klik "Muat Ulang" untuk memuat data terbaru.</p>`;
+    return;
+  }
+
+  let rows = filtered.map((e,idx)=>{
+    const meta = kategoriMeta(e.kategori);
+    return `
+    <tr style="background:${idx%2===0?'#FFFFFF':'#F7F6F2'}">
+      <td>${formatTanggal(e.tanggalUpload)}</td>
+      <td style="font-weight:500">${esc(e.namaLengkap)}</td>
+      <td><span class="chip" style="color:${meta.color}; background:${meta.bg}">${esc(e.kategori)}</span></td>
+      <td>${esc(e.titikLokasi) || '<span style="color:#9AA8C0;">-</span>'}</td>
+      <td>${e.kodeOutlet ? `<span class="outlet-badge">${esc(e.kodeOutlet)}</span>` : '<span style="color:#9AA8C0; font-size:12px;">-</span>'}</td>
+      <td>${formatTanggal(e.tanggalNota)}</td>
+      <td style="text-align:right; font-family:'IBM Plex Mono',monospace;">${formatRupiah(e.nominal)}</td>
+      <td>${e.notaBukti ? `<img src="${e.notaBukti}" class="nota-thumb-small" data-status-preview="${e.id}" />` : '<span style="color:#A6A79C; font-size:12px;">-</span>'}</td>
+    </tr>`;
+  }).join("");
+
+  area.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Tgl upload</th><th>Nama</th><th>Kategori</th><th>Lokasi</th><th>Outlet</th>
+          <th>Tgl nota</th><th style="text-align:right;">Nominal</th><th>Nota</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  area.querySelectorAll("[data-status-preview]").forEach(img=>{
+    img.addEventListener("click", ()=>{
+      const e = entries.find(x=>x.id === img.getAttribute("data-status-preview"));
+      if(e){
+        document.getElementById("previewImg").src = e.notaBukti;
+        document.getElementById("previewOverlay").classList.remove("hidden");
+      }
     });
   });
 }
@@ -2210,7 +2320,19 @@ function initEvents(){
   document.getElementById("exportBtn").addEventListener("click", handleExport);
   document.getElementById("exportPhotoBtn").addEventListener("click", handleExportPhoto);
   document.getElementById("exportSheetPhotoBtn").addEventListener("click", handleExportSheetPhoto);
-  document.getElementById("syncSheetBtn").addEventListener("click", handleLoadFromSheet);
+  document.getElementById("syncSheetBtn").addEventListener("click", ()=> handleLoadFromSheet("syncSheetBtn"));
+
+  document.getElementById("statusFilterKategori").addEventListener("change", e=>{
+    statusFilterKategori = e.target.value; renderStatusLedger();
+  });
+  document.getElementById("statusFilterNama").addEventListener("input", e=>{
+    statusFilterNama = e.target.value; renderStatusLedger();
+  });
+  document.getElementById("statusSortBy").addEventListener("change", e=>{
+    statusSortBy = e.target.value; renderStatusLedger();
+  });
+  document.getElementById("statusReloadBtn").addEventListener("click", ()=> handleLoadFromSheet("statusReloadBtn"));
+  document.getElementById("statusBackBtn").addEventListener("click", ()=>{ view = "staff"; render(); });
 
   document.getElementById("pinSubmitBtn").addEventListener("click", tryPinLogin);
   document.getElementById("pinInput").addEventListener("keydown", e=>{ if(e.key === "Enter") tryPinLogin(); });
