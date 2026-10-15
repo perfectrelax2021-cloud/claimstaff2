@@ -188,3 +188,12 @@
 
   .hidden { display: none !important; }
   ::placeholder { color: #9AA8C0; }
+/* Sembunyikan kolom Nota hanya di halaman Status Upload */
+#statusTableArea th:nth-child(8),
+#statusTableArea td:nth-child(8) {
+  display: none;
+}
+/* rapikan baris Total di bagian bawah */
+#statusTableArea tfoot td:last-child {
+  display: none;
+}
