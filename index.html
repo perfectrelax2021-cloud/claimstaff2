@@ -2720,7 +2720,23 @@ function rekapFillSheet(ws, head, blocks){
   ws.views = [{ state: "frozen", ySplit: 6, zoomScale: 85 }];
   ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 }
+function sanitizeSheetName(name, usedNames) {
+  let clean = String(name || 'Sheet')
+    .replace(/[:\\\/\?\*\[\]]/g, ' ')
+    .replace(/^'+|'+$/g, '')
+    .trim()
+    .substring(0, 31) || 'Sheet';
 
+  if (usedNames) {
+    let base = clean, i = 2;
+    while (usedNames.has(clean.toLowerCase())) {
+      const suffix = ' (' + i++ + ')';
+      clean = base.substring(0, 31 - suffix.length) + suffix;
+    }
+    usedNames.add(clean.toLowerCase());
+  }
+  return clean;
+}
 function rekapBuildWorkbook(ExcelJSLib, list, cfg){
   const wb = new ExcelJSLib.Workbook();
   const byStaff = {};
