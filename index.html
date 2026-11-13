@@ -1292,11 +1292,13 @@ const STAFF = [
       <h3 style="font-size:13px; margin:14px 0 4px; color:#3A4A63;">Staff masuk sheet yang mana</h3>
       <div id="rekapStaffList"></div>
     </div>
-    <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-      <span style="font-size:12px; color:#66748C;">Kolom No Rekening dikosongkan, isi di Excel setelah diunduh.</span>
-      <button type="button" class="export-btn" id="rekapDownloadBtn">&#128190; Unduh Rekap Final</button>
-    </div>
+   <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+  <span style="font-size:12px; color:#66748C;">Kolom No Rekening dikosongkan, isi di Excel setelah diunduh.</span>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button type="button" class="export-btn" id="rekapSheetBtn">&#128196; Kirim ke Google Sheets</button>
+    <button type="button" class="export-btn" id="rekapDownloadBtn">&#128190; Unduh Rekap Final</button>
   </div>
+</div>  
 </div>
 <div id="previewOverlay" class="overlay hidden">
   <img id="previewImg" class="preview-img" src="" alt="Pratinjau nota" />
@@ -2739,8 +2741,17 @@ function sanitizeSheetName(name, usedNames) {
   }
   return clean;
 }
-function rekapBuildWorkbook(ExcelJSLib, list, cfg){
-  const wb = new ExcelJSLib.Workbook();
+function rekapReadCfg(){
+  return {
+    periode: document.getElementById("rekapPeriode").value.trim(),
+    nomorDasar: document.getElementById("rekapNomorDasar").value.trim(),
+    bulanTahun: document.getElementById("rekapBulanTahun").value.trim(),
+    groups: rekapCfg.groups,
+    assign: rekapCfg.assign || {}
+  };
+}
+
+function rekapPlan(list, cfg){
   const byStaff = {};
   list.forEach(e => {
     const n = (e.namaLengkap || "").trim() || "Tanpa Nama";
@@ -2753,118 +2764,79 @@ function rekapBuildWorkbook(ExcelJSLib, list, cfg){
     (bucket[gid] = bucket[gid] || []).push(n);
   });
   const used = new Set();
-  let sheets = 0;
+  const sheets = [];
   cfg.groups.concat([{ id: "_none", bank: "-", suffix: "", kelompok: "", unassigned: true }]).forEach(g => {
     const names = bucket[g.id];
     if(!names || !names.length) return;
     const nomor = g.unassigned ? "-" : (cfg.nomorDasar + g.suffix + "/PR/" + cfg.bulanTahun + (g.kelompok ? "  ( " + g.kelompok + " )" : ""));
     const title = g.unassigned ? "Belum diatur" : (cfg.nomorDasar + g.suffix + " (" + g.bank + (g.kelompok ? " - " + g.kelompok : "") + ")");
-    const ws = wb.addWorksheet(sanitizeSheetName(title, used));
-    const blocks = names.map(n => ({ nama: n, rows: rekapBuildRows(byStaff[n]) }));
-    rekapFillSheet(ws, { periode: cfg.periode, nomor: nomor, bank: g.bank }, blocks);
-    sheets++;
+    sheets.push({
+      title: sanitizeSheetName(title, used),
+      nomor: nomor,
+      bank: g.bank,
+      blocks: names.map(n => ({ nama: n, rows: rekapBuildRows(byStaff[n]) }))
+    });
   });
-  return { workbook: wb, sheets: sheets, unassigned: (bucket._none || []).length };
+  return { sheets: sheets, unassigned: (bucket._none || []).length };
 }
 
-/* ----- tampilan (jendela pengaturan) ----- */
-function renderRekapGroups(){
-  const box = document.getElementById("rekapGroups");
-  box.innerHTML = rekapCfg.groups.map((g, i) => `
-    <div style="display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap; align-items:center;">
-      <input class="filter-select" data-rk="bank" data-i="${i}" value="${esc(g.bank)}" placeholder="Bank" style="width:120px;" />
-      <input class="filter-select" data-rk="suffix" data-i="${i}" value="${esc(g.suffix)}" placeholder="Akhiran nomor" style="width:110px;" />
-      <input class="filter-select" data-rk="kelompok" data-i="${i}" value="${esc(g.kelompok)}" placeholder="Kelompok (opsional)" style="width:170px;" />
-      <button type="button" class="delete-btn" data-rk-del="${i}" title="Hapus kelompok">&#128465;</button>
-    </div>`).join("");
-}
-function renderRekapStaff(){
-  const list = getFiltered();
-  const totals = {};
-  list.forEach(e => {
-    const n = (e.namaLengkap || "").trim() || "Tanpa Nama";
-    totals[n] = (totals[n] || 0) + (Number(e.nominal) || 0);
+function rekapBuildWorkbook(ExcelJSLib, list, cfg){
+  const wb = new ExcelJSLib.Workbook();
+  const plan = rekapPlan(list, cfg);
+  plan.sheets.forEach(s => {
+    const ws = wb.addWorksheet(s.title);
+    rekapFillSheet(ws, { periode: cfg.periode, nomor: s.nomor, bank: s.bank }, s.blocks);
   });
-  rekapStaffNames = Object.keys(totals).sort((a, b) => a.localeCompare(b));
-  const opts = selected => `<option value="">- belum diatur -</option>` + rekapCfg.groups.map(g =>
-    `<option value="${esc(g.id)}"${g.id === selected ? " selected" : ""}>${esc((rekapCfg.nomorDasar || "") + g.suffix + " - " + (g.bank || "?") + (g.kelompok ? " (" + g.kelompok + ")" : ""))}</option>`
-  ).join("");
-  document.getElementById("rekapStaffList").innerHTML = rekapStaffNames.map((n, i) => `
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #E7EEF6;">
-      <span style="font-size:13px; flex:1; min-width:0;">${esc(n)} <span style="color:#66748C; font-size:12px;">${formatRupiah(totals[n])}</span></span>
-      <select class="filter-select" data-rk-staff="${i}" style="max-width:220px;">${opts(rekapCfg.assign[n])}</select>
-    </div>`).join("");
-  const total = list.reduce((s, e) => s + (Number(e.nominal) || 0), 0);
-  document.getElementById("rekapSummary").textContent = list.length + " klaim, " + rekapStaffNames.length + " staff, total " + formatRupiah(total);
+  return { workbook: wb, sheets: plan.sheets.length, unassigned: plan.unassigned };
 }
-function openRekap(){
-  const list = getFiltered();
-  if(list.length === 0){
-    showToast("Tidak ada data. Muat data dari Google Sheets dan atur filter dulu", true);
-    return;
-  }
-  rekapCfg = loadRekapCfg();
-  let d1 = null, d2 = null;
-  if(filterTglMulai && filterTglSampai){
-    d1 = new Date(filterTglMulai); d2 = new Date(filterTglSampai);
-  } else {
-    const ds = list.map(e => parseFlexibleDate(e.tanggalUpload)).filter(d => !isNaN(d.getTime())).sort((a, b) => a - b);
-    if(ds.length){ d1 = ds[0]; d2 = ds[ds.length - 1]; }
-  }
-  const endD = d2 && !isNaN(d2.getTime()) ? d2 : new Date();
-  document.getElementById("rekapPeriode").value = formatPeriodeID(d1, d2);
-  document.getElementById("rekapNomorDasar").value = rekapCfg.nomorDasar;
-  document.getElementById("rekapBulanTahun").value = ROMAN_MONTH[endD.getMonth()] + "/" + endD.getFullYear();
-  renderRekapGroups();
-  renderRekapStaff();
-  document.getElementById("rekapOverlay").classList.remove("hidden");
-}
-function closeRekap(){
-  document.getElementById("rekapOverlay").classList.add("hidden");
-}
-async function handleRekapDownload(){
-  if(typeof ExcelJS === "undefined"){ showToast("Library ExcelJS gagal dimuat, cek koneksi internet", true); return; }
+
+async function handleRekapToSheet(){
+  if(!WEBAPP_URL || !WEBAPP_URL.startsWith("http")){ showToast("URL Apps Script belum diatur", true); return; }
   const list = getFiltered();
   if(list.length === 0){ showToast("Tidak ada data untuk direkap", true); return; }
-  const cfg = {
-    periode: document.getElementById("rekapPeriode").value.trim(),
-    nomorDasar: document.getElementById("rekapNomorDasar").value.trim(),
-    bulanTahun: document.getElementById("rekapBulanTahun").value.trim(),
-    groups: rekapCfg.groups,
-    assign: rekapCfg.assign || {}
+  const cfg = rekapReadCfg();
+  const plan = rekapPlan(list, cfg);
+  const payload = {
+    action: "saveRekap",
+    colNames: REKAP_COL_NAMES,
+    sign: REKAP_SIGN,
+    sheets: plan.sheets.map(s => ({
+      title: s.title, periode: cfg.periode, nomor: s.nomor, bank: s.bank,
+      blocks: s.blocks.map(b => ({
+        nama: b.nama,
+        rows: b.rows.map(r => ({ kode: r.kode, lokasi: r.lokasi, ket: r.ket.join(", "), amt: r.amt }))
+      }))
+    }))
   };
-  const btn = document.getElementById("rekapDownloadBtn");
+  const btn = document.getElementById("rekapSheetBtn");
   const original = btn.innerHTML;
-  btn.innerHTML = "Menyiapkan file...";
+  btn.innerHTML = "Mengirim...";
   btn.disabled = true;
   try{
-    const res = rekapBuildWorkbook(ExcelJS, list, cfg);
-    const buffer = await res.workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "rekap-final-" + (cfg.periode.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || todayISO()) + ".xlsx";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast("Rekap final diunduh (" + res.sheets + " sheet)" + (res.unassigned ? ". " + res.unassigned + " staff belum diatur, ada di sheet 'Belum diatur'" : ""));
+    const res = await fetch(WEBAPP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if(json.status !== "ok") throw new Error(json.message || "Gagal menyimpan rekap");
+    showToast("Rekap terkirim (" + json.count + " tab)" + (plan.unassigned ? ". " + plan.unassigned + " staff belum diatur" : ""));
+    if(json.url) window.open(json.url, "_blank");
   }catch(err){
     console.error(err);
-    showToast("Gagal membuat rekap: " + err.message, true);
+    showToast("Gagal mengirim rekap: " + err.message, true);
   }finally{
     btn.innerHTML = original;
     btn.disabled = false;
   }
 }
-
 document.addEventListener("click", ev => {
   const t = ev.target;
   if(!t || !t.closest) return;
   if(t.closest("#rekapBtn")){ openRekap(); return; }
   if(t.closest("#rekapCloseBtn")){ closeRekap(); return; }
   if(t.closest("#rekapDownloadBtn")){ handleRekapDownload(); return; }
+  if(t.closest("#rekapSheetBtn")){ handleRekapToSheet(); return; }
   if(!rekapCfg) return;
   if(t.closest("#rekapAddGroupBtn")){
     rekapCfg.groups.push({ id: "g" + Date.now(), bank: "", suffix: "", kelompok: "" });
