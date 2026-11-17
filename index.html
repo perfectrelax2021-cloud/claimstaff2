@@ -2632,7 +2632,15 @@ function renderDupResults(){
   }
   box.innerHTML = html;
 }
-
+async function driveImageToDataUrl(driveUrl){
+  const m = String(driveUrl).match(/[?&]id=([a-zA-Z0-9_-]+)/) || String(driveUrl).match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const id = m ? m[1] : null;
+  if(!id) throw new Error("ID Drive tidak ditemukan di URL");
+  const res = await fetch(WEBAPP_URL + "?action=getImage&id=" + id + "&t=" + Date.now());
+  const json = await res.json();
+  if(json.status !== "ok") throw new Error(json.message || "Gagal mengambil gambar dari Drive");
+  return "data:" + (json.mime || json.mimeType || "image/jpeg") + ";base64," + json.base64;
+}
 async function handleCheckDuplicates(){
   const overlay = document.getElementById("dupOverlay");
   const prog = document.getElementById("dupProgress");
@@ -2829,20 +2837,18 @@ function rekapFillSheet(ws, head, blocks){
         colSums[i] += v;
         if(v > 0) ws.getCell(r, 5 + i).value = v;
       });
-      ws.getCell(r, 12).value = { formula: "SUM(E" + r + ":K" + r + ")", result: rowTotal };
-     if(nrek){
-     ws.getCell(r, 13).value = nrek;
-     ws.getCell(r, 13).numFmt = "@";
-     }
+            ws.getCell(r, 12).value = { formula: "SUM(E" + r + ":K" + r + ")", result: rowTotal };
+      if(nrek){
+        ws.getCell(r, 13).value = nrek;
+        ws.getCell(r, 13).numFmt = "@";
+      }
       for(let c = 1; c <= 13; c++){
-       if(c === 13) cell.alignment = { horizontal: "center", vertical: "middle" };
         const cell = ws.getCell(r, c);
         cell.border = border;
         if(c >= 5 && c <= 12) cell.numFmt = MONEY;
-        if(c === 1 || c === 2) cell.alignment = { horizontal: "center", vertical: "middle" };
+        if(c === 1 || c === 2 || c === 13) cell.alignment = { horizontal: "center", vertical: "middle" };
         if(c === 3 || c === 4) cell.alignment = { vertical: "middle", wrapText: true };
-      }
-      r++;
+      }      r++;
     });
     const last = r - 1;
     const staffTotal = colSums.reduce((a, x) => a + x, 0);
@@ -2958,7 +2964,90 @@ function rekapBuildWorkbook(ExcelJSLib, list, cfg){
   });
   return { workbook: wb, sheets: plan.sheets.length, unassigned: plan.unassigned };
 }
-
+function renderRekapGroups(){
+  const box = document.getElementById("rekapGroups");
+  box.innerHTML = rekapCfg.groups.map((g, i) => `
+    <div style="display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap; align-items:center;">
+      <input class="filter-select" data-rk="bank" data-i="${i}" value="${esc(g.bank)}" placeholder="Bank" style="width:120px;" />
+      <input class="filter-select" data-rk="suffix" data-i="${i}" value="${esc(g.suffix)}" placeholder="Akhiran nomor" style="width:110px;" />
+      <input class="filter-select" data-rk="kelompok" data-i="${i}" value="${esc(g.kelompok)}" placeholder="Kelompok (opsional)" style="width:170px;" />
+      <button type="button" class="delete-btn" data-rk-del="${i}" title="Hapus kelompok">&#128465;</button>
+    </div>`).join("");
+}
+function renderRekapStaff(){
+  const list = getFiltered();
+  const totals = {};
+  list.forEach(e => {
+    const n = (e.namaLengkap || "").trim() || "Tanpa Nama";
+    totals[n] = (totals[n] || 0) + (Number(e.nominal) || 0);
+  });
+  rekapStaffNames = Object.keys(totals).sort((a, b) => a.localeCompare(b));
+  const opts = selected => `<option value="">- belum diatur -</option>` + rekapCfg.groups.map(g =>
+    `<option value="${esc(g.id)}"${g.id === selected ? " selected" : ""}>${esc((rekapCfg.nomorDasar || "") + g.suffix + " - " + (g.bank || "?") + (g.kelompok ? " (" + g.kelompok + ")" : ""))}</option>`
+  ).join("");
+  document.getElementById("rekapStaffList").innerHTML = rekapStaffNames.map((n, i) => `
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #E7EEF6;">
+      <span style="font-size:13px; flex:1; min-width:0;">${esc(n)} <span style="color:#66748C; font-size:12px;">${formatRupiah(totals[n])}</span></span>
+      <select class="filter-select" data-rk-staff="${i}" style="max-width:220px;">${opts(rekapCfg.assign[n])}</select>
+    </div>`).join("");
+  const total = list.reduce((s, e) => s + (Number(e.nominal) || 0), 0);
+  document.getElementById("rekapSummary").textContent = list.length + " klaim, " + rekapStaffNames.length + " staff, total " + formatRupiah(total);
+}
+function openRekap(){
+  const list = getFiltered();
+  if(list.length === 0){
+    showToast("Tidak ada data. Muat data dari Google Sheets dan atur filter dulu", true);
+    return;
+  }
+  rekapCfg = loadRekapCfg();
+  let d1 = null, d2 = null;
+  if(filterTglMulai && filterTglSampai){
+    d1 = new Date(filterTglMulai); d2 = new Date(filterTglSampai);
+  } else {
+    const ds = list.map(e => parseFlexibleDate(e.tanggalUpload)).filter(d => !isNaN(d.getTime())).sort((a, b) => a - b);
+    if(ds.length){ d1 = ds[0]; d2 = ds[ds.length - 1]; }
+  }
+  const endD = d2 && !isNaN(d2.getTime()) ? d2 : new Date();
+  document.getElementById("rekapPeriode").value = formatPeriodeID(d1, d2);
+  document.getElementById("rekapNomorDasar").value = rekapCfg.nomorDasar;
+  document.getElementById("rekapBulanTahun").value = ROMAN_MONTH[endD.getMonth()] + "/" + endD.getFullYear();
+  renderRekapGroups();
+  renderRekapStaff();
+  document.getElementById("rekapOverlay").classList.remove("hidden");
+}
+function closeRekap(){
+  document.getElementById("rekapOverlay").classList.add("hidden");
+}
+async function handleRekapDownload(){
+  if(typeof ExcelJS === "undefined"){ showToast("Library ExcelJS gagal dimuat, cek koneksi internet", true); return; }
+  const list = getFiltered();
+  if(list.length === 0){ showToast("Tidak ada data untuk direkap", true); return; }
+  const cfg = rekapReadCfg();
+  const btn = document.getElementById("rekapDownloadBtn");
+  const original = btn.innerHTML;
+  btn.innerHTML = "Menyiapkan file...";
+  btn.disabled = true;
+  try{
+    const res = rekapBuildWorkbook(ExcelJS, list, cfg);
+    const buffer = await res.workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "rekap-final-" + (cfg.periode.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || todayISO()) + ".xlsx";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Rekap final diunduh (" + res.sheets + " sheet)" + (res.unassigned ? ". " + res.unassigned + " staff belum diatur, ada di sheet 'Belum diatur'" : ""));
+  }catch(err){
+    console.error(err);
+    showToast("Gagal membuat rekap: " + err.message, true);
+  }finally{
+    btn.innerHTML = original;
+    btn.disabled = false;
+  }
+}
 async function handleRekapToSheet(){
   if(!WEBAPP_URL || !WEBAPP_URL.startsWith("http")){ showToast("URL Apps Script belum diatur", true); return; }
   const list = getFiltered();
